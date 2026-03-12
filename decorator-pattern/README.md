@@ -8,7 +8,7 @@ In backend systems, the most common applications are adding **caching**, **loggi
 
 ---
 
-## The Problem It Helps Solve
+## The Problem
 
 Cross-cutting concerns — caching, logging, timing — need to be attached to data access or service logic without coupling them to the core implementation. The alternatives are:
 
@@ -39,27 +39,31 @@ See [`example.php`](./example.php) for a `CachingInvoiceRepository` that wraps a
 
 ---
 
-## Why This Pattern Can Help
+## Solution
 
-- **Single responsibility**: the Eloquent repository queries; the caching decorator caches
-- **Composable**: a logging decorator can wrap the caching decorator, which wraps the Eloquent repository
-- **Transparent**: callers use `InvoiceRepositoryInterface`; they are unaware of which layers are present
-- **Swappable**: caching can be enabled or disabled by composing a different dependency graph at the container level
+Create a decorator class that implements the same interface and wraps the original. Each decorator adds one concern and delegates everything else.
 
----
+```php
+// ✅ Caching decorator — adds caching, delegates to the real repository
+final class CachingInvoiceRepository implements InvoiceRepositoryInterface
+{
+    public function __construct(
+        private readonly InvoiceRepositoryInterface $inner,
+        private readonly CacheInterface             $cache,
+    ) {}
 
-## Trade-offs / When Not to Overuse It
+    public function findOverdueByUser(int $userId): Collection
+    {
+        return $this->cache->remember(
+            "invoices.overdue.user.{$userId}",
+            300,
+            fn () => $this->inner->findOverdueByUser($userId),
+        );
+    }
+}
+```
 
-The Decorator pattern is worth it when the cross-cutting concern is meaningful, stable, and genuinely separate from the core logic. If the caching key logic is trivial and the interface changes frequently, maintaining a decorator may produce more churn than value.
-
-Decorators work best when the interface is stable. A repository interface that changes every sprint makes maintaining a decorator costly.
-
----
-
-## Production Notes
-
-**Wire the decorator in the service container, not in the decorated class.**  
-The decision to add caching belongs in the composition root (service provider), not in the class being cached.
+Wire in the service container — the caller receives `InvoiceRepositoryInterface` and is unaware of which layers are present:
 
 ```php
 // AppServiceProvider::register()
@@ -71,8 +75,32 @@ $this->app->bind(InvoiceRepositoryInterface::class, function ($app) {
 });
 ```
 
+---
+
+## Why It Matters
+
+- **Single responsibility**: the Eloquent repository queries; the caching decorator caches
+- **Composable**: a logging decorator can wrap the caching decorator, which wraps the Eloquent repository
+- **Transparent**: callers use `InvoiceRepositoryInterface`; they are unaware of which layers are present
+- **Swappable**: caching can be enabled or disabled by composing a different dependency graph at the container level
+
+---
+
+## Trade-offs
+
+The Decorator pattern is worth it when the cross-cutting concern is meaningful, stable, and genuinely separate from the core logic. If the caching key logic is trivial and the interface changes frequently, maintaining a decorator may produce more churn than value.
+
+Decorators work best when the interface is stable. A repository interface that changes every sprint makes maintaining a decorator costly.
+
+---
+
+## Production Notes
+
 **Invalidate cache when data changes.**  
 A read decorator that caches query results must coordinate with write operations. Either tag cache entries and flush by tag, or use versioned cache keys tied to `updated_at`. See the [laravel-performance-patterns](https://github.com/taglientinicolas/laravel-performance-patterns) repository for cache versioning patterns.
 
 **Stack decorators intentionally.**  
 Wrapping a logging decorator around a caching decorator means reads are logged when the cache is missed. Wrapping the caching decorator around the logging decorator means every read is logged regardless of cache. The order matters.
+
+**Wire the decorator in the service container, not in the decorated class.**  
+The decision to add caching belongs in the composition root (service provider), not in the class being cached.

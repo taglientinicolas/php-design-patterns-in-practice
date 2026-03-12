@@ -6,7 +6,7 @@ The Event-Driven pattern decouples the originator of an action from the code tha
 
 ---
 
-## The Problem It Helps Solve
+## The Problem
 
 Side effects accumulate in service methods. A user registration flow starts with one notification and grows into several:
 
@@ -35,20 +35,52 @@ See [`example.php`](./example.php) for a `UserRegistered` event dispatched from 
 
 ---
 
-## Why This Pattern Can Help
+## Solution
+
+Dispatch an event from the service. Define independent listener classes that each handle one side effect.
+
+```php
+// ✅ Service dispatches one event; side effects are handled by listeners
+final class UserRegistrationService
+{
+    public function register(RegisterUserData $data): User
+    {
+        $user = User::create([...]);
+
+        UserRegistered::dispatch($user);
+
+        return $user;
+    }
+}
+
+// ✅ Each listener is independent and focused on one responsibility
+final class SendWelcomeEmail implements ShouldQueue
+{
+    public bool $afterCommit = true;
+
+    public function handle(UserRegistered $event): void
+    {
+        Mail::to($event->user)->send(new WelcomeEmail($event->user));
+    }
+}
+```
+
+---
+
+## Why It Matters
 
 - **Decoupled side effects**: the registration service fires one event; listeners are added, removed, or modified without touching the service
 - **Single responsibility**: the service handles registration; each listener handles one side effect
-- **Asynchronous processing**: listeners can be queued, offloading slow operations (email sending, analytics calls) from the request cycle
+- **Asynchronous processing**: listeners can be queued, offloading slow operations (email, analytics) from the request cycle
 - **Discoverability**: all reactions to `UserRegistered` are visible in the event's listener list, not buried in a service method
 
 ---
 
-## Trade-offs / When Not to Overuse It
+## Trade-offs
 
 Events make the flow harder to trace compared to explicit calls. When debugging a registration issue, finding which listeners fired and in what order requires knowledge of the event system configuration. This is a real cost in teams unfamiliar with the codebase.
 
-Events are well-suited for **side effects** — operations that are supplementary to the core action. They are not a good fit for **core logic** that must complete before the operation can succeed. If sending a welcome email is optional, use an event. If creating a default workspace is required for a valid account, do it explicitly in the service.
+Events are well-suited for **side effects** — operations supplementary to the core action. They are not a good fit for **core logic** that must complete before the operation can succeed. If sending a welcome email is optional, use an event. If creating a default workspace is required for a valid account, do it explicitly in the service.
 
 ---
 

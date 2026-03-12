@@ -6,19 +6,13 @@ The Service Layer pattern introduces a dedicated class to own business logic, ke
 
 ---
 
-## The Problem It Helps Solve
+## The Problem
 
 Controllers collect logic over time. Validation rules, conditional flows, external API calls, and side effects end up in the same method. The result is code that:
 
 - cannot be tested without bootstrapping an HTTP request
 - cannot be reused from a console command, a queue job, or another service
 - mixes HTTP concerns (requests, responses, redirects) with domain concerns (business rules, state transitions)
-
----
-
-## Example
-
-See [`example.php`](./example.php) for a realistic invoice generation flow.
 
 ```php
 // ❌ Controller doing too much
@@ -33,7 +27,21 @@ public function generate(Request $request): JsonResponse
     $invoice = Invoice::create([...]);
     // PDF generation, email sending, logging — all inline
 }
+```
 
+---
+
+## Example
+
+See [`example.php`](./example.php) for a realistic invoice generation flow.
+
+---
+
+## Solution
+
+Move all business logic into a service class. The controller becomes a thin adapter between HTTP and the application layer.
+
+```php
 // ✅ Controller delegates; service owns the domain logic
 public function generate(InvoiceRequest $request): JsonResponse
 {
@@ -41,11 +49,30 @@ public function generate(InvoiceRequest $request): JsonResponse
 
     return response()->json(new InvoiceResource($invoice), 201);
 }
+
+// ✅ Service owns validation, orchestration, and side effects
+final class InvoiceGenerationService
+{
+    public function generate(User $user, array $data): Invoice
+    {
+        if (!$user->hasActiveSubscription()) {
+            throw new SubscriptionRequiredException();
+        }
+
+        return DB::transaction(function () use ($user, $data) {
+            $invoice = Invoice::create([...]);
+
+            event(new InvoiceGenerated($invoice));
+
+            return $invoice;
+        });
+    }
+}
 ```
 
 ---
 
-## Why This Pattern Can Help
+## Why It Matters
 
 - **Testability**: service classes can be unit-tested without an HTTP context
 - **Reusability**: the same logic runs from a controller, a CLI command, or a queue job
@@ -54,9 +81,9 @@ public function generate(InvoiceRequest $request): JsonResponse
 
 ---
 
-## Trade-offs / When Not to Overuse It
+## Trade-offs
 
-The Service Layer pattern adds a class. For simple CRUD operations with no business rules, a service class is ceremony without value — the controller can interact with the model directly.
+The pattern adds a class. For simple CRUD operations with no business rules, a service class is ceremony without value — the controller can interact with the model directly.
 
 The pattern becomes valuable when:
 - there are multiple steps or conditions involved

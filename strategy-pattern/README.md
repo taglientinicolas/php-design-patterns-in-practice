@@ -8,7 +8,7 @@ In backend systems, the pattern appears wherever the same operation needs to be 
 
 ---
 
-## The Problem It Helps Solve
+## The Problem
 
 Without the Strategy pattern, conditional logic that varies by case accumulates in a single method:
 
@@ -28,7 +28,7 @@ public function calculate(Order $order, string $discountType): float
 }
 ```
 
-Each new discount type requires modifying this method. The method accumulates knowledge of every strategy, grows harder to test, and becomes a change magnet.
+Each new discount type requires modifying this method. It accumulates knowledge of every strategy, grows harder to test, and becomes a change magnet.
 
 ---
 
@@ -38,7 +38,41 @@ See [`example.php`](./example.php) for a discount calculation system with three 
 
 ---
 
-## Why This Pattern Can Help
+## Solution
+
+Extract each case into a class that implements a shared interface. Resolve the strategy externally and inject it into the service.
+
+```php
+// ✅ Shared interface
+interface DiscountStrategyInterface
+{
+    public function apply(Order $order): float;
+}
+
+// ✅ Each strategy is a small, focused class
+final class PercentageDiscount implements DiscountStrategyInterface
+{
+    public function __construct(private readonly float $percentage) {}
+
+    public function apply(Order $order): float
+    {
+        return round($order->subtotal * (1 - $this->percentage / 100), 2);
+    }
+}
+
+// ✅ Service receives the resolved strategy — no knowledge of which type
+final class OrderPricingService
+{
+    public function calculateTotal(Order $order, DiscountStrategyInterface $discount): float
+    {
+        return $discount->apply($order);
+    }
+}
+```
+
+---
+
+## Why It Matters
 
 - **Open/Closed**: new strategies are added as new classes without modifying existing ones
 - **Testability**: each strategy is a small, isolated class with a single responsibility
@@ -46,7 +80,7 @@ See [`example.php`](./example.php) for a discount calculation system with three 
 
 ---
 
-## Trade-offs / When Not to Overuse It
+## Trade-offs
 
 If there are only two cases and they are unlikely to grow, a simple `if/else` is clearer than three files and an interface. The Strategy pattern introduces structure worth maintaining; apply it when the number of variants is growing or each variant is complex enough to warrant its own class.
 

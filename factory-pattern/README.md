@@ -6,7 +6,7 @@ The Factory pattern encapsulates object creation logic. Instead of instantiating
 
 ---
 
-## The Problem It Helps Solve
+## The Problem
 
 When a system supports multiple implementations of the same behaviour — multiple notification channels, multiple payment providers, multiple file parsers — the creation logic tends to accumulate as `if/switch` chains at the point of use:
 
@@ -21,7 +21,7 @@ if ($channel === 'email') {
 }
 ```
 
-When a new channel is added, every occurrence of this block must be updated. The factory consolidates it.
+When a new channel is added, every occurrence of this block must be updated.
 
 ---
 
@@ -31,7 +31,44 @@ See [`example.php`](./example.php) for a `NotificationSenderFactory` that resolv
 
 ---
 
-## Why This Pattern Can Help
+## Solution
+
+Define an interface that all implementations share. Use a factory to centralise the decision of which implementation to instantiate.
+
+```php
+// ✅ All senders implement the same interface
+interface NotificationSenderInterface
+{
+    public function send(string $recipient, string $message): void;
+}
+
+// ✅ Factory centralises instantiation — one place to add new channels
+final class NotificationSenderFactory
+{
+    public function make(string $channel): NotificationSenderInterface
+    {
+        return match ($channel) {
+            'email' => new EmailNotificationSender($this->config['email']),
+            'sms'   => new SmsNotificationSender($this->config['sms']),
+            'slack' => new SlackNotificationSender($this->config['slack']),
+            default => throw new InvalidArgumentException("Unsupported channel: '{$channel}'."),
+        };
+    }
+}
+
+// ✅ Caller depends on the interface only
+final class NotificationService
+{
+    public function notify(string $channel, string $recipient, string $message): void
+    {
+        $this->factory->make($channel)->send($recipient, $message);
+    }
+}
+```
+
+---
+
+## Why It Matters
 
 - **Centralised creation logic**: adding a new implementation means updating the factory, not every call site
 - **Decoupled callers**: services depend on the interface (`NotificationSenderInterface`), not on concrete classes
@@ -39,7 +76,7 @@ See [`example.php`](./example.php) for a `NotificationSenderFactory` that resolv
 
 ---
 
-## Trade-offs / When Not to Overuse It
+## Trade-offs
 
 A factory class is worth its existence only when there are multiple implementations to choose between and that choice changes at runtime. If there is only one implementation and it never changes, a factory is indirection with no payoff.
 
